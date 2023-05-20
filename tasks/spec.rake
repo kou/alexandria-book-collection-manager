@@ -31,12 +31,12 @@ require "rspec/core/rake_task"
 namespace "spec" do
   RSpec::Core::RakeTask.new("unit") do |t|
     t.pattern = "spec/alexandria/**/*_spec.rb"
-    t.ruby_opts = ["-rbundler/setup -rsimplecov -Ilib -w"]
+    t.ruby_opts = ["-rsegv-handler-gdb -rbundler/setup -rsimplecov -Ilib -w --debug"]
   end
 
   RSpec::Core::RakeTask.new("end_to_end") do |t|
     t.pattern = "spec/end_to_end/**/*_spec.rb"
-    t.ruby_opts = ["-rbundler/setup -rsimplecov -Ilib -w"]
+    t.ruby_opts = ["-rsegv-handler-gdb -rbundler/setup -rsimplecov -Ilib -w-debug"]
   end
 
   desc "Runs all unit and end-to-end specs"

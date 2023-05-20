@@ -10,3 +10,16 @@ group :development, :test do
   gem "simplecov"
   gem "yard", "~> 0.9.5"
 end
+
+gem "segv-handler-gdb"
+git "file://#{Dir.pwd}/ruby-gnome/.git" do
+  gem "atk"
+  gem "cairo-gobject"
+  gem "gdk3"
+  gem "gdk_pixbuf2"
+  gem "gio2"
+  gem "glib2"
+  gem "gobject-introspection"
+  gem "gtk3"
+  gem "pango"
+end

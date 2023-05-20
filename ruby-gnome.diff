@@ -1,0 +1,132 @@
+diff --git a/glib2/ext/glib2/glib2.def b/glib2/ext/glib2/glib2.def
+index 22178c774..6bff053f0 100644
+--- a/glib2/ext/glib2/glib2.def
++++ b/glib2/ext/glib2/glib2.def
+@@ -63,6 +63,7 @@ EXPORTS
+ 	rbgobj_register_type
+ 	rbgobj_object_alloc_func
+ 	rbgobj_object_add_relative
++	rbgobj_gobject_remove_relative
+ 	rbgobj_object_remove_relative
+ 	rbgobj_object_remove_relatives
+ 	rbgobj_set_signal_func
+diff --git a/glib2/ext/glib2/rbgobj_closure.c b/glib2/ext/glib2/rbgobj_closure.c
+index 7445d6651..08f1ff3d1 100644
+--- a/glib2/ext/glib2/rbgobj_closure.c
++++ b/glib2/ext/glib2/rbgobj_closure.c
+@@ -23,7 +23,7 @@
+ 
+ #define RG_TARGET_NAMESPACE cClosure
+ 
+-static ID id_call, id_closures;
++static ID id_call;
+ static gboolean rclosure_initialized = FALSE;
+ 
+ #define TAG_SIZE 64
+@@ -155,6 +155,7 @@ rclosure_marshal(GClosure*       closure,
+     G_PROTECT_CALLBACK(rclosure_marshal_do, &arg);
+ }
+ 
++static void g_rclosure_detach_raw_gobject(GClosure *closure, GObject *gobject);
+ static void rclosure_weak_notify(gpointer data, GObject* where_the_object_was);
+ 
+ static void
+@@ -165,12 +166,11 @@ rclosure_invalidate(G_GNUC_UNUSED gpointer data, GClosure *closure)
+     GList *next;
+     for (next = rclosure->objects; next; next = next->next) {
+         GObject *object = G_OBJECT(next->data);
++        if (!NIL_P(rclosure->rb_holder)) {
++            g_rclosure_detach_raw_gobject(closure, object);
++        }
+         g_object_weak_unref(object, rclosure_weak_notify, rclosure);
+         g_closure_unref(closure);
+-        VALUE obj = rbgobj_ruby_object_from_instance2(object, FALSE);
+-        if (!NIL_P(rclosure->rb_holder) && !NIL_P(obj)) {
+-            rbgobj_object_remove_relative(obj, rclosure->rb_holder);
+-        }
+     }
+     g_list_free(rclosure->objects);
+     rclosure->objects = NULL;
+@@ -279,10 +279,7 @@ void
+ g_rclosure_attach(GClosure *closure, VALUE object)
+ {
+     GRClosure *rclosure = (GRClosure *)closure;
+-    rbgobj_add_relative_removable(object,
+-                                  Qnil,
+-                                  id_closures,
+-                                  rclosure->rb_holder);
++    rbgobj_add_relative(object, rclosure->rb_holder);
+ }
+ 
+ void
+@@ -297,11 +294,18 @@ g_rclosure_attach_gobject(GClosure *closure, VALUE object)
+     rclosure->objects = g_list_prepend(rclosure->objects, gobject);
+ }
+ 
++static void
++g_rclosure_detach_raw_gobject(GClosure *closure, GObject *gobject)
++{
++    GRClosure *rclosure = (GRClosure *)closure;
++    rbgobj_gobject_remove_relative(gobject, rclosure->rb_holder);
++}
++
+ void
+ g_rclosure_detach(GClosure *closure, VALUE object)
+ {
+     GRClosure *rclosure = (GRClosure *)closure;
+-    rbgobj_remove_relative(object, id_closures, rclosure->rb_holder);
++    rbgobj_remove_relative(object, 0, rclosure->rb_holder);
+ }
+ 
+ void
+@@ -338,7 +342,6 @@ static void
+ init_rclosure(void)
+ {
+     id_call = rb_intern("call");
+-    id_closures = rb_intern("closures");
+     rclosure_initialized = TRUE;
+     rb_set_end_proc(rclosure_end_proc, Qnil);
+ }
+diff --git a/glib2/ext/glib2/rbgobj_object.c b/glib2/ext/glib2/rbgobj_object.c
+index 474e3e4e1..4d9e01a44 100644
+--- a/glib2/ext/glib2/rbgobj_object.c
++++ b/glib2/ext/glib2/rbgobj_object.c
+@@ -132,6 +132,15 @@ rbgobj_object_add_relative(VALUE rb_gobject, VALUE rb_relative)
+     }
+ }
+ 
++void
++rbgobj_gobject_remove_relative(GObject *gobject, VALUE rb_relative)
++{
++    gobj_holder *holder = g_object_get_qdata(gobject, RUBY_GOBJECT_OBJ_KEY);
++    if (holder && holder->rb_relatives) {
++        g_hash_table_remove(holder->rb_relatives, (gpointer)(rb_relative));
++    }
++}
++
+ void
+ rbgobj_object_remove_relative(VALUE rb_gobject, VALUE rb_relative)
+ {
+@@ -141,8 +150,7 @@ rbgobj_object_remove_relative(VALUE rb_gobject, VALUE rb_relative)
+                          &rg_glib_object_type,
+                          holder);
+     if (holder->rb_relatives) {
+-        g_hash_table_remove(holder->rb_relatives,
+-                            (gpointer)(rb_relative));
++        g_hash_table_remove(holder->rb_relatives, (gpointer)(rb_relative));
+     }
+ }
+ 
+diff --git a/glib2/ext/glib2/rbgobject.h b/glib2/ext/glib2/rbgobject.h
+index 53352e6d6..41e877d5e 100644
+--- a/glib2/ext/glib2/rbgobject.h
++++ b/glib2/ext/glib2/rbgobject.h
+@@ -146,6 +146,8 @@ extern void rbgobj_instance_unref(gpointer instance);
+ 
+ extern void rbgobj_object_add_relative(VALUE rb_gobject,
+                                        VALUE rb_relative);
++extern void rbgobj_gobject_remove_relative(GObject *gobject,
++                                           VALUE rb_relative);
+ extern void rbgobj_object_remove_relative(VALUE rb_gobject,
+                                           VALUE rb_relative);
+ extern void rbgobj_object_remove_relatives(VALUE rb_gobject,
